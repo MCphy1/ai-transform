@@ -1,0 +1,63 @@
+http:
+  ip: 0.0.0.0
+  port: 8085
+  # debug、test、release
+  mode: debug
+mysql:
+  dsn: "username:password@tcp(192.168.179.134:3306)/ai_transform?collation=utf8mb4_unicode_ci&charset=utf8mb4"
+  maxLifeTime: 3600
+  maxOpenConn: 10
+  maxIdleConn: 10
+externalKafka:
+  user: admin
+  pwd: 123456
+  saslMechanism: PLAIN
+  maxRetry: 3
+  address:
+    - 192.168.179.134:59092
+kafka:
+  user: admin
+  pwd: 123456
+  saslMechanism: PLAIN
+  maxRetry: 3
+  address:
+    - 192.168.179.134:29092
+    - 192.168.179.134:39092
+    - 192.168.179.134:49092
+log:
+  # panic,fatal,error,warn,warning,info,debug,trace
+  level: "debug"
+  logPath: "runtime/logs/app.log"
+cos:
+  secretId: your secretId
+  secretKey: your secretKey
+  region: "ap-guangzhou"
+  appID: "your appID"
+  bucket: "your bucket"
+  cdnDomain: "your cdnDomain"
+  bucketUrl: "your bucketUrl"
+asr:
+  secretId: your secretId
+  secretKey: your secretKey
+  endpoint: "asr.tencentcloudapi.com"
+  region: "ap-guangzhou"
+  modals: ["啊","呃","哎","唉","呢","嗯"]
+tmt:
+  region: "ap-guangzhou"
+  endpoint: "tmt.tencentcloudapi.com"
+  secretID: "your secretId"
+  secretKey: "your secretKey"
+dependOn:
+  gpt:
+    - http://localhost:9881
+  referWav:
+    address: "http://localhost:8085"
+  user:
+    address: "http://localhost:8082"
+llm:
+    apiKey: "your apiKey"
+    baseURL: "your baseURL"
+    model: "your model"
+    maxTokens: 2048
+    temperature: 0.7
+proofreadingTermsFile: "./proofreading_terms.yaml"
