@@ -1,5 +1,14 @@
 <template>
-    <div v-loading="loading" class="loading">
+    <div class="page-container">
+        <div class="nav-header">
+            <router-link to="/" class="nav-link" active-class="active">翻译任务</router-link>
+            <router-link to="/proofread" class="nav-link" active-class="active">字幕校对</router-link>
+            <router-link to="/deadletter" class="nav-link" active-class="active">失败任务</router-link>
+            <el-button type="primary" :icon="Refresh" @click="loadRecords" :loading="loading" class="refresh-btn">
+                刷新
+            </el-button>
+        </div>
+        <div v-loading="loading" class="loading">
 
         <el-card class="item">
             <el-icon class="avatar-uploader-icon" style="width: 3.125rem; height:3.125rem;">
@@ -40,6 +49,7 @@
             </div>
         </el-card>
     </div>
+    </div>
     <el-dialog v-model="dialogFormVisible" title="Translate" width="500">
         <div v-loading="loading1">
             <el-form :model="form">
@@ -62,6 +72,13 @@
                         <el-option label="ZH" value="zh" />
                     </el-select>
                 </el-form-item>
+                <el-form-item label="Subtitle proofread" :label-width="formLabelWidth">
+                    <el-select v-model="form.proofread_type" placeholder="Please select a proofread type">
+                        <el-option label="Manual proofread" value="manual_proofread" />
+                        <el-option label="AI proofread" value="ai_proofread" />
+                        <el-option label="No proofread" value="no_proofread" />
+                    </el-select>
+                </el-form-item>
             </el-form>
             <footer class="el-dialog__footer">
                 <div class="dialog-footer">
@@ -79,12 +96,14 @@
 // import { Plus, Check, Download } from '@element-plus/icons-vue'
 import { Plus, Check, Download, Refresh } from '@element-plus/icons-vue'
 import { reactive, ref, onBeforeMount } from "vue"
-import { ElNotification } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { ElNotification, ElMessageBox } from 'element-plus'
 import { record, getTranslateRecords, transInfo, translate,cosPresignedUrl,uploadCos } from "../api/api.ts"
 import { getDateStr} from "../utils/utils.ts"
 
 const loading = ref(false)
 const loading1 = ref(false)
+const router = useRouter()
 let recordList = reactive([] as record[]);
 
 onBeforeMount(() => {
@@ -130,6 +149,7 @@ const form = reactive({
     project_name: '',
     original_language: '',
     translate_language: '',
+    proofread_type: '',
     filename: '',
     file_url: '',
 })
@@ -185,9 +205,27 @@ function dialogSubmit() {
         project_name: form.project_name,
         original_language: form.original_language,
         translate_language: form.translate_language,
+        proofread_type: form.proofread_type,
         file_url: form.file_url,
     }
-    translate(params).then(() => { }).catch((res) => {
+    translate(params).then(() => {
+        // 如果选择了手动校对，弹窗提示用户
+        if (form.proofread_type === 'manual_proofread') {
+            ElMessageBox.confirm(
+                '翻译任务已提交，字幕准备好后需要您进行校对。是否现在前往校对页面？',
+                '提示',
+                {
+                    confirmButtonText: '前往校对',
+                    cancelButtonText: '稍后再说',
+                    type: 'info',
+                }
+            ).then(() => {
+                router.push('/proofread')
+            }).catch(() => {
+                // 用户点击"稍后再说"，不做任何操作
+            })
+        }
+    }).catch((res) => {
         ElNotification({
             title: 'Error',
             message: res.message,
@@ -262,6 +300,7 @@ function resetForm() {
     form.original_language = ""
     form.project_name = ""
     form.translate_language = ""
+    form.proofread_type = ""
     file = null
 }
 
@@ -302,6 +341,34 @@ function reTranslate(record: record) {
 
 </script>
 <style>
+.page-container {
+    width: 100%;
+    height: 100%;
+}
+.nav-header {
+    display: flex;
+    gap: 20px;
+    padding: 15px 20px;
+    background-color: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+}
+.nav-link {
+    text-decoration: none;
+    color: #666;
+    font-size: 16px;
+    padding: 8px 16px;
+    border-radius: 4px;
+}
+.nav-link:hover {
+    background-color: #e0e0e0;
+}
+.nav-link.active {
+    color: #409eff;
+    background-color: #e6f7ff;
+}
+.refresh-btn {
+    margin-left: auto;
+}
 .loading {
     position: relative;
     display: flex;

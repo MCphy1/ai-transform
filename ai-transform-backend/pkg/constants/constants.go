@@ -27,6 +27,12 @@ const (
 	COS_OUTPUT    = COS_ROOT + "/outputs"
 )
 
+// Topic 后缀
+const (
+	KAFKA_TOPIC_RETRY_SUFFIX = "_retry"
+	KAFKA_TOPIC_DEAD_SUFFIX  = "_dead"
+)
+
 // Topic 定义
 const (
 	// web站入口队列
@@ -62,3 +68,19 @@ const LANG_ZH = "zh"
 
 // 英文
 const LANG_EN = "en"
+
+// 校对类型
+const (
+	PROOFREAD_TYPE_MANUAL = "manual_proofread" // 手动校对
+	PROOFREAD_TYPE_AI     = "ai_proofread"     // AI 校对
+	PROOFREAD_TYPE_NONE   = "no_proofread"     // 不校对
+)
+
+// 任务状态
+const (
+	STATUS_PENDING      = "pending"      // 等待处理
+	STATUS_PROOFREADING = "proofreading" // 等待人工校对
+	STATUS_PROCESSING   = "processing"   // 处理中（音频生成/视频合成）
+	STATUS_COMPLETED    = "completed"    // 已完成
+	STATUS_FAILED       = "failed"       // 失败
+)

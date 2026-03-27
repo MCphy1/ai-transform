@@ -51,9 +51,15 @@ func (t *asr) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_ASR,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_ASR),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_ASR, []string{constants.KAFKA_TOPIC_TRANSFORM_ASR})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_ASR, topics)
 }
 func (t *asr) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("asr begin\n")
@@ -105,7 +111,7 @@ func (t *asr) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	}
 
 	referMsg := asrMsg
-	asrMsg.OriginalSrtPath = originalSrtPath
+	referMsg.OriginalSrtPath = originalSrtPath
 
 	value, err := json.Marshal(referMsg)
 	if err != nil {

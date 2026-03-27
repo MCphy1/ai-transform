@@ -43,9 +43,15 @@ func (t *generation) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION, []string{constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION, topics)
 }
 func (t *generation) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("audio generation begin\n")

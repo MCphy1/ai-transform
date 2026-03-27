@@ -50,9 +50,15 @@ func (t *referWav) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_REFER_WAV,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_REFER_WAV),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_REFER_WAV, []string{constants.KAFKA_TOPIC_TRANSFORM_REFER_WAV})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_REFER_WAV, topics)
 }
 func (t *referWav) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("refer begin\n")

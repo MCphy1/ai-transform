@@ -87,6 +87,9 @@ func main() {
 	asrFactory := tasr.NewCreateAsrFactory(cfg.Asr.SecretId, cfg.Asr.SecretKey, cfg.Asr.Endpoint, cfg.Asr.Region)
 	tf := tmt.NewCreateTmtFactory(cfg.Tmt.SecretID, cfg.Tmt.SecretKey, cfg.Tmt.Endpoint, cfg.Tmt.Region)
 
+	// 初始化全局死信队列处理器（用于更新数据库状态为 failed）
+	kafka.InitDeadLetterHandler(data, logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 	go entry.NewEntry(cfg, logger, csf).Start(ctx)
@@ -94,7 +97,7 @@ func main() {
 	go asr.NewAsr(cfg, logger, csf, data, asrFactory).Start(ctx)
 	go refer_wav.NewReferWav(cfg, logger).Start(ctx)
 	go translate.NewTranslate(cfg, logger, csf, data, tf).Start(ctx)
-	go proofreading.NewSubtitleProofreading(cfg, logger, csf).Start(ctx)
+	go proofreading.NewSubtitleProofreading(cfg, logger, csf, data).Start(ctx)
 	go audio_generation.NewGeneration(cfg, logger).Start(ctx)
 	go av_synthesis.NewAVSynthesis(cfg, logger).Start(ctx)
 	go save_result.NewSaveResult(cfg, logger, csf, data).Start(ctx)

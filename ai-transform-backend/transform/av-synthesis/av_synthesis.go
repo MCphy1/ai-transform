@@ -46,9 +46,15 @@ func (t *avSynthesis) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_AV_SYNTHESIS,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_AV_SYNTHESIS),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AV_SYNTHESIS, []string{constants.KAFKA_TOPIC_TRANSFORM_AV_SYNTHESIS})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AV_SYNTHESIS, topics)
 }
 
 func (t *avSynthesis) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {

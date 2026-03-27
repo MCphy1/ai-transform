@@ -46,9 +46,15 @@ func (t *entry) Start(ctx context.Context) {
 			SASLMechanism: cfg.ExternalKafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_WEB_ENTRY,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_WEB_ENTRY),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_WEB_ENTRY, []string{constants.KAFKA_TOPIC_TRANSFORM_WEB_ENTRY})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_WEB_ENTRY, topics)
 }
 func (t *entry) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("entry begin\n")
@@ -67,7 +73,8 @@ func (t *entry) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error
 	// entryMsg.UserID = 0
 	// entryMsg.SourceLanguage = "zh"
 	// entryMsg.TargetLanguage = "en"
-	// fmt.Println(entryMsg)
+	// entryMsg.ProofreadType = "ai_proofread"
+	fmt.Println(entryMsg)
 
 	cs := t.cosStorageFactory.CreateStorage()
 	dstPath := fmt.Sprintf("%s/%s", constants.INPUTS_DIR, path.Base(entryMsg.OriginalVideoUrl))

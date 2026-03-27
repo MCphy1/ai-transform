@@ -6,6 +6,7 @@ type KafkaMsg struct {
 	OriginalVideoUrl string `json:"originalVideoUrl,omitempty"`
 	SourceLanguage   string `json:"sourceLanguage,omitempty"`
 	TargetLanguage   string `json:"targetLanguage,omitempty"`
+	ProofreadType string `json:"proofreadType,omitempty"`
 	//源文件路径
 	SourceFilePath string `json:"sourceFilePath,omitempty"`
 	//文件名称，不包含扩展名

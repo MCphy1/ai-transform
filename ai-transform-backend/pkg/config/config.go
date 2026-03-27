@@ -75,6 +75,15 @@ type Config struct {
 		MaxRetry      int
 		Address       []string
 	}
+	// 重试配置
+	Retry struct {
+		LocalRetryEnabled    bool   `mapstructure:"local_retry_enabled"`
+		LocalMaxRetries      int    `mapstructure:"local_max_retries"`
+		LocalRetryDelay      string `mapstructure:"local_retry_delay"` // 例如 "2s"
+		RetryQueueEnabled    bool   `mapstructure:"retry_queue_enabled"`
+		RetryQueueMaxRetries int    `mapstructure:"retry_queue_max_retries"`
+		DeadLetterEnabled    bool   `mapstructure:"dead_letter_enabled"`
+	}
 }
 
 var conf *Config

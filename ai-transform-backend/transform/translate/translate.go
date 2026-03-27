@@ -52,9 +52,15 @@ func (t *translate) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_TRANSLATE_SRT,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_TRANSLATE_SRT),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_TRANSLATE_SRT, []string{constants.KAFKA_TOPIC_TRANSFORM_TRANSLATE_SRT})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_TRANSLATE_SRT, topics)
 }
 func (t *translate) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("translate begin\n")
@@ -110,10 +116,10 @@ func (t *translate) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) e
 		return err
 	}
 
-	generationMsg := translateMsg
-	generationMsg.TranslateSrtPath = translateSrtPath
+	proofreadingMsg := translateMsg
+	proofreadingMsg.TranslateSrtPath = translateSrtPath
 
-	value, err := json.Marshal(translateMsg)
+	value, err := json.Marshal(proofreadingMsg)
 	if err != nil {
 		t.log.Error(err)
 		return err

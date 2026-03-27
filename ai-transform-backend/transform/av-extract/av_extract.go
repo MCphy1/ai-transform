@@ -42,9 +42,15 @@ func (t *avExtract) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_AV_EXTRACT,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_AV_EXTRACT),
 	}
 	cg := kafka.NewConsumerGroup(conf, t.log, t.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AV_EXTRACT, []string{constants.KAFKA_TOPIC_TRANSFORM_AV_EXTRACT})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_AV_EXTRACT, topics)
 }
 func (t *avExtract) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
 	// fmt.Printf("av extract begin\n")

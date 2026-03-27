@@ -1,6 +1,7 @@
 package subtitle_proofreading
 
 import (
+	"ai-transform-backend/data"
 	_interface "ai-transform-backend/interface"
 	"ai-transform-backend/message"
 	"ai-transform-backend/pkg/config"
@@ -17,6 +18,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/tmc/langchaingo/llms"
@@ -28,11 +30,12 @@ type subtitleProofreading struct {
 	conf              *config.Config
 	log               log.ILogger
 	cosStorageFactory storage.StorageFactory
+	data              data.IData
 	llm               llms.Model
 	proofreadingTerms map[string]string // 专有名词纠正表
 }
 
-func NewSubtitleProofreading(conf *config.Config, log log.ILogger, cosStorageFactory storage.StorageFactory) _interface.ConsumerTask {
+func NewSubtitleProofreading(conf *config.Config, log log.ILogger, cosStorageFactory storage.StorageFactory, data data.IData) _interface.ConsumerTask {
 	llm, err := openai.New(
 		openai.WithModel(conf.LLM.Model),
 		openai.WithBaseURL(conf.LLM.BaseURL),
@@ -49,6 +52,7 @@ func NewSubtitleProofreading(conf *config.Config, log log.ILogger, cosStorageFac
 		conf:              conf,
 		log:               log,
 		cosStorageFactory: cosStorageFactory,
+		data:              data,
 		llm:               llm,
 		proofreadingTerms: proofreadingTerms,
 	}
@@ -64,13 +68,19 @@ func (s *subtitleProofreading) Start(ctx context.Context) {
 			SASLMechanism: cfg.Kafka.SaslMechanism,
 			Version:       sarama.V3_7_0_0,
 		},
+		RetryConfig: kafka.DefaultRetryConfig(),
+	}
+	// 订阅原始 topic 和重试 topic
+	topics := []string{
+		constants.KAFKA_TOPIC_TRANSFORM_SUBTITLE_PROOFREADING,
+		kafka.GetRetryTopic(constants.KAFKA_TOPIC_TRANSFORM_SUBTITLE_PROOFREADING),
 	}
 	cg := kafka.NewConsumerGroup(conf, s.log, s.messageHandleFunc)
-	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_SUBTITLE_PROOFREADING, []string{constants.KAFKA_TOPIC_TRANSFORM_SUBTITLE_PROOFREADING})
+	cg.Start(ctx, constants.KAFKA_TOPIC_TRANSFORM_SUBTITLE_PROOFREADING, topics)
 }
 
 func (s *subtitleProofreading) messageHandleFunc(consumerMessage *sarama.ConsumerMessage) error {
-	// fmt.Printf("subtitle proofreading begin\n")
+	fmt.Printf("subtitle proofreading begin\n")
 
 	proofreadingMsg := &message.KafkaMsg{}
 	err := json.Unmarshal(consumerMessage.Value, proofreadingMsg)
@@ -79,6 +89,81 @@ func (s *subtitleProofreading) messageHandleFunc(consumerMessage *sarama.Consume
 		return err
 	}
 	s.log.Debug(proofreadingMsg)
+
+	// 根据校对类型执行不同逻辑
+	switch proofreadingMsg.ProofreadType {
+	case constants.PROOFREAD_TYPE_NONE:
+		// 不校对，直接发送到音频生成队列
+		return s.handleNoProofread(proofreadingMsg)
+	case constants.PROOFREAD_TYPE_MANUAL:
+		// 手动校对，保存字幕等待人工处理
+		return s.handleManualProofread(proofreadingMsg)
+	case constants.PROOFREAD_TYPE_AI:
+		// AI 校对，使用 LLM 进行校对
+		return s.handleAIProofread(proofreadingMsg)
+	default:
+		// 默认不校对
+		s.log.Info(fmt.Sprintf("Unknown proofread type: %s, skip proofreading", proofreadingMsg.ProofreadType))
+		return s.handleNoProofread(proofreadingMsg)
+	}
+}
+
+// handleNoProofread 不校对，直接发送到音频生成队列
+func (s *subtitleProofreading) handleNoProofread(proofreadingMsg *message.KafkaMsg) error {
+	s.log.Info(fmt.Sprintf("No proofread mode, skip proofreading for: %s", proofreadingMsg.Filename))
+	fmt.Printf("No proofread mode, skip proofreading for: %s\n", proofreadingMsg.Filename)
+
+	// 直接使用翻译后的字幕路径
+	proofreadingMsg.ProofreadingSrtPath = proofreadingMsg.TranslateSrtPath
+
+	// 发送到音频生成队列
+	return s.sendToAudioGeneration(proofreadingMsg)
+}
+
+// handleManualProofread 手动校对，保存字幕并更新状态等待人工处理
+func (s *subtitleProofreading) handleManualProofread(proofreadingMsg *message.KafkaMsg) error {
+	s.log.Info(fmt.Sprintf("Manual proofread mode, waiting for manual review: %s", proofreadingMsg.Filename))
+	fmt.Printf("Manual proofread mode, waiting for manual review: %s\n", proofreadingMsg.Filename)
+
+	// 1. 保存待校对字幕到本地
+	proofreadingSrtFilename := fmt.Sprintf("%s_proofreading.srt", proofreadingMsg.Filename)
+	proofreadingSrtPath := fmt.Sprintf("%s/%s", constants.SRTS_DIR, proofreadingSrtFilename)
+
+	// 复制翻译后的字幕作为待校对字幕
+	err := utils.CopyFile(proofreadingMsg.TranslateSrtPath, proofreadingSrtPath)
+	if err != nil {
+		s.log.Error(fmt.Sprintf("Failed to copy proofreading srt: %v", err))
+		return err
+	}
+
+	// 2. 上传到 COS
+	storageSrtPath := fmt.Sprintf("%s/%s", constants.COS_SRTS, path.Base(proofreadingSrtPath))
+	st := s.cosStorageFactory.CreateStorage()
+	proofreadSrtUrl, err := st.UploadFromFile(proofreadingSrtPath, storageSrtPath)
+	if err != nil {
+		s.log.Error(fmt.Sprintf("Failed to upload proofreading srt: %v", err))
+		return err
+	}
+
+	// 3. 更新数据库状态为"等待校对"
+	recordsData := s.data.NewTransformRecordsData()
+	err = recordsData.UpdateStatus(proofreadingMsg.RecordsID, constants.STATUS_PROOFREADING, proofreadSrtUrl, time.Now().Unix())
+	if err != nil {
+		s.log.Error(fmt.Sprintf("Failed to update record status: %v", err))
+		return err
+	}
+
+	// 4. 不发送到下一个队列，等待用户校对
+	s.log.Info(fmt.Sprintf("Task %d is now waiting for manual proofread", proofreadingMsg.RecordsID))
+	fmt.Printf("Task %d is now waiting for manual proofread\n", proofreadingMsg.RecordsID)
+
+	return nil
+}
+
+// handleAIProofread AI 校对，使用 LLM 进行校对
+func (s *subtitleProofreading) handleAIProofread(proofreadingMsg *message.KafkaMsg) error {
+	s.log.Info(fmt.Sprintf("AI proofread mode, using LLM for: %s", proofreadingMsg.Filename))
+	fmt.Printf("AI proofread mode, using LLM for: %s\n", proofreadingMsg.Filename)
 
 	// 读取翻译后的字幕文件
 	translateSrtPath := proofreadingMsg.TranslateSrtPath
@@ -134,28 +219,32 @@ func (s *subtitleProofreading) messageHandleFunc(consumerMessage *sarama.Consume
 	}
 
 	// 更新消息
-	generationMsg := proofreadingMsg
-	generationMsg.ProofreadingSrtPath = proofreadingSrtPath
+	proofreadingMsg.ProofreadingSrtPath = proofreadingSrtPath
 
 	// 发送到音频生成队列
-	value, err := json.Marshal(generationMsg)
+	return s.sendToAudioGeneration(proofreadingMsg)
+}
+
+// sendToAudioGeneration 发送消息到音频生成队列
+func (s *subtitleProofreading) sendToAudioGeneration(proofreadingMsg *message.KafkaMsg) error {
+	value, err := json.Marshal(proofreadingMsg)
 	if err != nil {
 		s.log.Error(err)
 		return err
 	}
 
 	producer := kafka.GetProducer(kafka.Producer)
-	msg := &sarama.ProducerMessage{
+	generationMsg := &sarama.ProducerMessage{
 		Topic: constants.KAFKA_TOPIC_TRANSFORM_AUDIO_GENERATION,
 		Value: sarama.StringEncoder(value),
 	}
-	_, _, err = producer.SendMessage(msg)
+	_, _, err = producer.SendMessage(generationMsg)
 	if err != nil {
 		s.log.Error(err)
 		return err
 	}
 
-	// fmt.Printf("subtitle proofreading end\n")
+	fmt.Printf("subtitle proofreading end\n")
 
 	return nil
 }
