@@ -4,7 +4,7 @@ http:
   # debug、test、release
   mode: debug
 mysql:
-  dsn: "lll-server:123456789@tcp(192.168.179.134:3306)/ai_transform?collation=utf8mb4_unicode_ci&charset=utf8mb4"
+  dsn: "username:123456789@tcp(192.168.179.134:3306)/ai_transform?collation=utf8mb4_unicode_ci&charset=utf8mb4"
   maxLifeTime: 3600
   maxOpenConn: 10
   maxIdleConn: 10
@@ -29,24 +29,24 @@ log:
   level: "debug"
   logPath: "runtime/logs/app.log"
 cos:
-  secretId: AKIDTyLWUFoBLI2auztPo01pRVO4Yos0yqgO
-  secretKey: 6zf8ORHwOehhaHm49h3Qeo2AJMeppdFf
+  secretId: your secretId
+  secretKey: your secretKey
   region: "ap-guangzhou"
   appID: "1407920408"
   bucket: "transform-1407920408"
-  cdnDomain: "https://transform-1407920408.cos.ap-guangzhou.myqcloud.com"
-  bucketUrl: "https://transform-1407920408.cos.ap-guangzhou.myqcloud.com"
+  cdnDomain: "your cdnDomain"
+  bucketUrl: "your bucketUrl"
 asr:
-  secretId: AKIDnRuATZYLEvgLqGVYTCk7HH7oKLJ9rPpD
-  secretKey: IPL5g7PWTIzZzLzRiHn9DAyb4UileNv1
+  secretId: your secretId
+  secretKey: your secretKey
   endpoint: "asr.tencentcloudapi.com"
   region: "ap-guangzhou"
   modals: ["啊","呃","哎","唉","呢","嗯"]
 tmt:
   region: "ap-guangzhou"
   endpoint: "tmt.tencentcloudapi.com"
-  secretID: "AKIDEUbaMzSlrLIm6Io8JJAwZ1HQO9lCQRJQ"
-  secretKey: "5yiJJCsLdkeLqCLHpBMK5e0CBzb2NWSB"
+  secretID: "your secretID"
+  secretKey: "your secretKey"
 dependOn:
   gpt:
     - http://localhost:9881
@@ -55,7 +55,7 @@ dependOn:
   user:
     address: "http://localhost:8082"
 llm:
-    apiKey: "sk-500aeda9598645a5a8ef09abc73cd0fe"
+    apiKey: "your apiKey"
     baseURL: "https://api.deepseek.com/v1"
     model: "deepseek-chat"
     maxTokens: 2048
