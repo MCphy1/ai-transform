@@ -121,7 +121,7 @@ func (t *avSynthesis) messageHandleFunc(consumerMessage *sarama.ConsumerMessage)
 	for _, seg := range videoSegments {
 		totalVideoDuration += seg.Duration
 	}
-	fmt.Printf("[变速前总时长] 视频: %.3fs\n", totalVideoDuration)
+	t.log.Info(fmt.Sprintf("[变速前总时长] 视频: %.3fs\n", totalVideoDuration))
 
 	// 5. 并行对每个视频片段进行变速，目标时长 = 音频时长 + 前置空白时长
 	adjustedVideoPaths, err := t.adjustAllSegments(videoSegments, audioDurationMap, videoOutputPath)
@@ -137,7 +137,7 @@ func (t *avSynthesis) messageHandleFunc(consumerMessage *sarama.ConsumerMessage)
 		return err
 	}
 	adjustedVideoDuration, _ := getDuration(t.log, adjustedVideoPath)
-	fmt.Printf("[视频合并完成] 变速后总时长: %.3fs\n", adjustedVideoDuration)
+	t.log.Info(fmt.Sprintf("[视频合并完成] 变速后总时长: %.3fs\n", adjustedVideoDuration))
 
 	// 7. 合并音频
 	audio, err := t.audioMerge(audioGroups, tmpOutputPath, "wav", "mp3")
@@ -145,7 +145,7 @@ func (t *avSynthesis) messageHandleFunc(consumerMessage *sarama.ConsumerMessage)
 		t.log.Error(err)
 		return err
 	}
-	fmt.Printf("[音频合并完成] 总时长: %.3fs, ExpectEnd: %dms\n", float64(audio.ExpectEnd)/1000.0, audio.ExpectEnd)
+	t.log.Info(fmt.Sprintf("[音频合并完成] 总时长: %.3fs, ExpectEnd: %dms\n", float64(audio.ExpectEnd)/1000.0, audio.ExpectEnd))
 
 	// 8. 合并音视频
 	mergeVideo := fmt.Sprintf("%s/%s/%s/%s.mp4", constants.MIDDLE_DIR, avSynthesisMsg.Filename, constants.TEMP_SUB_DIR, avSynthesisMsg.Filename)
@@ -157,7 +157,7 @@ func (t *avSynthesis) messageHandleFunc(consumerMessage *sarama.ConsumerMessage)
 	// 输出合并前总时长对比
 	videoDuration, _ := getDuration(t.log, adjustedVideoPath)
 	audioDuration, _ := getDuration(t.log, audio.AudioFile)
-	fmt.Printf("[音视频合并前时长对比] 视频: %.3fs, 音频: %.3fs, 差值: %.3fs\n", videoDuration, audioDuration, videoDuration-audioDuration)
+	t.log.Info(fmt.Sprintf("[音视频合并前时长对比] 视频: %.3fs, 音频: %.3fs, 差值: %.3fs\n", videoDuration, audioDuration, videoDuration-audioDuration))
 
 	// 9. 生成调整后的字幕文件
 	ext := path.Ext(avSynthesisMsg.TranslateSplitSrtPath)
@@ -264,7 +264,7 @@ func (t *avSynthesis) splitVideoBySrt(videoPath string, srtContentSlice []string
 
 	// 计算每个片段的实际切分区间
 	// 规则：
-	//   片段1: srtStart[0] → srtEnd[0]  （片头空白丢弃）
+	//   片段1: 0 → srtEnd[0]  （片头空白保留，与音频匹配）
 	//   片段N: srtEnd[N-2] → srtEnd[N-1] （空白并入下一片段开头）
 	//   最后一片: srtEnd[last-1] → totalMs （片尾空白并入最后片段）
 	type cutEntry struct {
@@ -278,7 +278,9 @@ func (t *avSynthesis) splitVideoBySrt(videoPath string, srtContentSlice []string
 	cuts := make([]cutEntry, len(entries))
 	for idx, e := range entries {
 		cutStart := e.startMs
-		if idx > 0 {
+		if idx == 0 {
+			cutStart = 0 // 第一段从视频开头开始，保留片头空白以匹配音频
+		} else if idx > 0 {
 			cutStart = entries[idx-1].endMs
 		}
 		cutEnd := e.endMs
@@ -385,10 +387,8 @@ func (t *avSynthesis) adjustAllSegments(videoSegments []*VideoSegment, audioDura
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// 目标时长 = 纯音频时长 + 本片段包含的前置空白时长
-			// 这样视频变速后与音频轨（含adelay空白）完全对齐
-			targetDuration := audioDuration + float64(seg.GapMs)/1000.0
-			adjustedPath, err := t.adjustVideoSegment(seg, targetDuration, videoOutputPath)
+			// 仅传入音频时长，空白部分在 adjustVideoSegment 中单独处理（保持原速不变）
+			adjustedPath, err := t.adjustVideoSegment(seg, audioDuration, videoOutputPath)
 			resultChan <- result{seg.Position, adjustedPath, err}
 		}()
 	}
@@ -405,12 +405,21 @@ func (t *avSynthesis) adjustAllSegments(videoSegments []*VideoSegment, audioDura
 }
 
 // adjustVideoSegment 调整单个视频片段速度以匹配目标时长
-func (t *avSynthesis) adjustVideoSegment(segment *VideoSegment, targetDuration float64, outputDir string) (string, error) {
+// 空白部分保持原速不变，仅对内容部分变速
+func (t *avSynthesis) adjustVideoSegment(segment *VideoSegment, audioDuration float64, outputDir string) (string, error) {
 	if segment.Duration <= 0 {
 		return "", fmt.Errorf("segment %d has invalid duration: %.3f", segment.Position, segment.Duration)
 	}
 
-	factor := targetDuration / segment.Duration
+	gapDuration := float64(segment.GapMs) / 1000.0
+	contentDuration := segment.Duration - gapDuration
+
+	if contentDuration <= 0 {
+		return "", fmt.Errorf("segment %d has invalid content duration: %.3f", segment.Position, contentDuration)
+	}
+
+	// 仅对内容部分计算变速因子
+	factor := audioDuration / contentDuration
 
 	// 限制变速范围，防止画面过快/过慢
 	clamped := factor
@@ -424,16 +433,30 @@ func (t *avSynthesis) adjustVideoSegment(segment *VideoSegment, targetDuration f
 			segment.Position, factor, minSpeedFactor, maxSpeedFactor, clamped))
 	}
 
-	t.log.Info(fmt.Sprintf("[片段 %d] 视频: %.3fs(gap %.3fs), 目标: %.3fs, factor: %.4f",
-		segment.Position, segment.Duration, float64(segment.GapMs)/1000.0, targetDuration, clamped))
+	// 最终时长 = 空白(不变速) + 内容(变速后)
+	finalDuration := gapDuration + audioDuration
+	t.log.Info(fmt.Sprintf("[片段 %d] 空白: %.3fs(不变), 内容: %.3fs→%.3fs, factor: %.4f, 最终: %.3fs",
+		segment.Position, gapDuration, contentDuration, audioDuration, clamped, finalDuration))
 
 	ext := path.Ext(segment.FilePath)
 	base := strings.TrimSuffix(segment.FilePath, ext)
 	outputFile := fmt.Sprintf("%s_adj%s", base, ext)
 
+	// 使用滤镜链：空白部分保持原速，内容部分变速，然后合并
+	// [0:v]trim=0:gap_duration,setpts=PTS-STARTPTS[blank];
+	// [0:v]trim=gap_duration,setpts=PTS-STARTPTS,setpts=factor*PTS[content];
+	// [blank][content]concat=n=2:v=1:a=0[v]
+	filterComplex := fmt.Sprintf(
+		"[0:v]trim=0:%.6f,setpts=PTS-STARTPTS[blank];"+
+			"[0:v]trim=%.6f,setpts=PTS-STARTPTS,setpts=%.6f*PTS[content];"+
+			"[blank][content]concat=n=2:v=1:a=0[v]",
+		gapDuration, gapDuration, clamped,
+	)
+
 	cmd := exec.Command(ffmpeg.FFmpeg,
 		"-i", segment.FilePath,
-		"-filter:v", fmt.Sprintf("setpts=%.6f*PTS", clamped),
+		"-filter_complex", filterComplex,
+		"-map", "[v]",
 		"-c:v", "libx264",
 		"-preset", "fast",
 		"-an",
@@ -450,8 +473,8 @@ func (t *avSynthesis) adjustVideoSegment(segment *VideoSegment, targetDuration f
 	if err != nil {
 		return "", err
 	}
-	t.log.Info(fmt.Sprintf("[片段 %d] 变速后: %.3fs, 与目标差值: %.3fs",
-		segment.Position, adjustedDuration, adjustedDuration-targetDuration))
+	t.log.Info(fmt.Sprintf("[片段 %d] 变速后: %.3fs, 与预期差值: %.3fs",
+		segment.Position, adjustedDuration, adjustedDuration-finalDuration))
 
 	return outputFile, nil
 }
