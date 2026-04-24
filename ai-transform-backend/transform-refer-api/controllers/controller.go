@@ -44,7 +44,7 @@ func initReferWavDir(conf *config.Config) error {
 	} else if conf.Http.Mode == gin.TestMode {
 		REFER_WAV = constants.TEST_REFER_WAV
 	} else {
-		REFER_WAV = "D:/program-GO/GPT-SoVITS-v2pro-20250604/runtime/test-refer"
+		REFER_WAV = "D:/program/GPT-SoVITS-v2pro-20250604/runtime/test-refer"
 	}
 	_, err := os.Stat(REFER_WAV)
 	if os.IsNotExist(err) {

@@ -31,7 +31,7 @@ type Transform struct {
 }
 
 func NewTransform(conf *config.Config, log log.ILogger, data data.IData, cosStorageFactory storage.StorageFactory) *Transform {
-	referWavDir := "D:/program-GO/GPT-SoVITS-v2pro-20250604/runtime/test-refer"
+	referWavDir := "D:/program/GPT-SoVITS-v2pro-20250604/runtime/test-refer"
 	if conf.Http.Mode == gin.ReleaseMode {
 		referWavDir = constants.REFER_WAV
 	} else if conf.Http.Mode == gin.TestMode {
